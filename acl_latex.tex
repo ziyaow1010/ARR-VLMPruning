@@ -118,10 +118,10 @@
 \maketitle
 
 \begin{abstract}
-Large vision-language foundation models (VLMs) provide strong generalization but are often over-capacitated for real-world deployment, where applications typically involve a small set of tasks and strict computational budgets. Existing approaches either incorporate budget adaptivity during pretraining or perform compression while attempting to preserve universal zero-shot capability, which inherently limits achievable compression. 
+Large vision-language foundation models (VLMs) provide strong generalization but are often over-capacitated for real-world deployment, where applications typically involve a small set of tasks and strict computational budgets. Existing approaches offer different mechanisms for model compression, but selecting and combining structural reductions for specific tasks and deployment budgets remains a practical challenge.
 In this work, we instead formulate deployment as a \textit{task-conditioned, budget-aware submodel extraction} problem: given a pretrained model, a target task set, and a budget, the goal is to derive a structured submodel that maximizes task performance under the constraint. 
 We propose a post-hoc extraction method that searches over heterogeneous structural reductions, including attention dropping, MLP dropping, block dropping, and width reduction. We rank removable units using lightweight task-aware evaluation and progressively select the operator that yields the best accuracy–budget trade-off at each reduction step. 
-Without modifying the pretraining process, our approach produces task-aligned submodels that maintain strong task accuracy under tight parameter and compute budgets across multiple VLMs.
+Without modifying pretraining, our approach produces task-aligned submodels with accuracy competitive with the evaluated structural baselines under parameter and inference-speed budgets on Qwen2.5-VL and LLaVA backbones.
 \end{abstract}
 
 
@@ -129,12 +129,11 @@ Without modifying the pretraining process, our approach produces task-aligned su
 \label{sec:intro}
 The emergence of large-scale vision-language foundation models (VLMs) has fundamentally reshaped visual understanding. 
 Trained on web-scale multimodal data, these models demonstrate strong generalization across diverse tasks such as 
-visual question answering~\cite{antol2015vqa}, image captioning~\cite{hossain2019comprehensive,you2016image}, and multimodal reasoning~\cite{chen2024spatialvlm}. A growing number of powerful open-source VLMs are now publicly available~\cite{bai2025qwen3,liu2023visual}. Despite architectural differences, they share common characteristics: large scale, broad versatility, and strong adaptation capability. As a result, a single pretrained 
-model can often serve as a universal backbone for a wide range of downstream multimodal tasks.
+visual question answering~\cite{antol2015vqa}, image captioning~\cite{hossain2019comprehensive,you2016image}, and multimodal reasoning~\cite{chen2024spatialvlm}. A growing number of powerful open-source VLMs are now publicly available~\cite{bai2025qwen3,liu2023visual}. For example, Qwen2.5-VL supports visual question answering, document understanding, and visual localization using a shared pretrained backbone~\cite{xu2025qwen25vltechnicalreport}. Such broad capability motivates adapting a pretrained model to a smaller target task set.
 
-However, the increasing scale and universality of these models expose a mismatch with real-world deployment. Practical applications are often highly specialized and require only a narrow subset of capabilities~\cite{tan2022towards,wang2023efficientvlm,wang2025prada}. In many cases, large portions of a foundation model’s capacity become functionally redundant. For instance, an embedded vision system may only need pose estimation or anomaly detection rather than the full spectrum of dense prediction or reasoning tasks~\cite{zhuang2025argus}. Moreover, deployment environments frequently have strict computational constraints. Applications such as robotics and autonomous systems demand real-time inference under limited hardware budgets, where the parameter count and computational overhead of modern foundation models can be prohibitive. As models continue to scale for broader generalization, the gap between large-scale pretraining and budget-constrained deployment widens. Existing efforts focus primarily on improving pretraining or enhancing universal capability, yet provide limited mechanisms for deriving models that align simultaneously with specific task needs, computational budgets, and real-world deployment requirements~\cite{ma2023llm,he2024matters, zhao2025hape}.
+However, the increasing scale and universality of these models expose a mismatch with real-world deployment. Practical applications are often highly specialized and require only a narrow subset of capabilities~\cite{tan2022towards,wang2023efficientvlm,wang2025prada}. In many cases, large portions of a foundation model’s capacity become functionally redundant. For instance, an embedded vision system may only need pose estimation or anomaly detection rather than the full spectrum of dense prediction or reasoning tasks~\cite{zhuang2025argus}. Moreover, deployment environments frequently have strict computational constraints. Applications such as robotics and autonomous systems demand real-time inference under limited hardware budgets, where the parameter count and computational overhead of modern foundation models can be prohibitive. As models continue to scale for broader generalization, the gap between large-scale pretraining and budget-constrained deployment widens. Existing pruning methods provide useful tools for deployment adaptation~\cite{ma2023llm,he2024matters,zhao2025hape}; our focus is selecting and combining structural operators according to target tasks and resource constraints.
 
-Existing approaches to mitigate this mismatch generally fall into two categories. The first follows the once-for-all (OFA) model training~\cite{cai2019once, cai2024flextron}, where budget adaptivity is incorporated during pretraining so that sub-networks of different computational costs can be selected after training. However, such methods assume control over the pretraining process, which is often inaccessible to practitioners relying on publicly available foundation models. The second category consists of post-hoc compression techniques, including structured pruning and sparsification~\cite{he2024rethinking, he2025understanding}, which aim to reduce the size of the model while preserving overall zero-shot generalization. Because these methods seek to maintain broad universal performance, the degree of compression achievable is inherently limited. In contrast, practical deployment typically requires flexible compression levels tailored to specific budgets and focuses on a small subset of domain-specific tasks rather than universal capability~\cite{tiwari2021chipnet}. As a result, current paradigms are not explicitly designed to produce aggressively compressed submodels aligned with tasks that match the requirements of the concrete task and the budget.
+Existing approaches include once-for-all (OFA) training~\cite{cai2019once,cai2024flextron}, which builds budget adaptivity into model training, and post-hoc compression, i.e., compression of an already pretrained checkpoint~\cite{he2024rethinking,he2025understanding}. The latter includes both task-specific and general-purpose methods. For example, MoPE-CLIP combines width and depth pruning for task-specific CLIP compression~\cite{lin2024mope}. We build on this literature to study heterogeneous structural extraction in autoregressive VLMs, with operator selection guided by task performance and explicit parameter or inference-speed budgets.
 
 In this work, we reformulate deployment as a \ul{task-conditioned, budget-constrained submodel extraction problem.} Given a pretrained VLM, a small set of target tasks, and a specified computational budget, 
 our goal is to derive a structured submodel that maximizes task performance while satisfying the budget constraint. 
@@ -145,7 +144,7 @@ reductions in transformer-based vision-language models. The framework considers 
 including attention removal, MLP removal, block dropping, and MLP width reduction. A lightweight task-aware ranking 
 stage first estimates the relative importance of removable units, after which a granularity-controlled greedy search 
 progressively selects the operator that provides the best accuracy–budget trade-off at each reduction step. 
-This design enables flexible adjustment of model depth and width without modifying the original pretraining process.
+This design enables flexible adjustment of model depth and width without modifying the original pretraining process. Our contribution is a deployment-oriented integration and empirical study of existing structural operators, rather than a new importance metric or search algorithm. The validation-based ranking and greedy search serve as simple implementations of this framework.
 
 By decoupling deployment adaptation from pretraining and explicitly optimizing task-specific performance, 
 our approach produces task-aligned submodels that establish a clear trade-off between task accuracy and computational 
@@ -163,9 +162,9 @@ which focuses on maximizing task performance under explicit resource constraints
 We propose a post-hoc extraction framework that searches over heterogeneous structural reductions 
 (attention, MLP, block, and width) and progressively constructs submodels that achieve favorable accuracy–budget trade-offs.
 
-\item \textbf{Comprehensive Empirical Study.}
+\item \textbf{Empirical Study across Backbones and Budgets.}
 Through systematic experiments on multiple VLM backbones, including Qwen2.5-VL and LLaVA models, 
-we show that task-aligned submodel extraction consistently achieves strong accuracy under significantly reduced parameter and compute budgets.
+we characterize accuracy--resource trade-offs and show that operator preferences differ between parameter and inference-speed budgets. An auxiliary comparison illustrates complementarity with token pruning.
 
 \end{itemize}
 
@@ -176,9 +175,9 @@ we show that task-aligned submodel extraction consistently achieves strong accur
 
 A common approach for extracting deployable submodels is Once-for-All (OFA) training~\cite{cai2019once,sakuma2023detofa}, which trains an over-parameterized supernet that supports sub-networks of different depths and widths through progressive shrinking. Related \emph{many-in-one} models~\cite{cai2024flextron,cai2025llamaflex} further introduce routing mechanisms to dynamically select submodels during inference, resembling Mixture-of-Experts (MoE) paradigms~\cite{mu2025comprehensive,zhou2022mixture}. However, these approaches require modifying the pretraining pipeline or redesigning the architecture, such as introducing routers or explicitly training a supernet. In practice, users often rely on publicly released foundation models without access to the original training process, making such approaches difficult to apply in plug-and-play deployment scenarios. In contrast, we focus on extracting efficient submodels directly from pretrained foundation models without modifying the original training procedure.
 
-\subsection{Structure Pruning in Transformer-based Foundation Models}
+\subsection{Structured Pruning in Transformer-based Foundation Models}
 
-Structured pruning in Transformer-based foundation models~\cite{vaswani2017attention} typically targets attention modules, MLP modules, or entire Transformer blocks. Existing methods~\cite{ma2023llm,he2024rethinking} explore different strategies, including attention drop~\cite{he2024matters}, MLP drop~\cite{mugnaini2025efficient}, block drop, and MLP width reduction~\cite{lei2025making,he2025understanding}. Attention drop mainly reduces KV-cache computation and inference latency, while MLP pruning and width reduction target the substantial redundancy in feed-forward layers. Block drop removes entire Transformer blocks but provides relatively coarse-grained control. Most prior approaches rely on a single pruning operator and aim to preserve universal or zero-shot capability across tasks. In contrast, we focus on task-conditioned submodel extraction under explicit deployment budgets, enabling more aggressive and flexible compression strategies tailored to specific downstream scenarios.
+Structured pruning in Transformer-based foundation models~\cite{vaswani2017attention} typically targets attention modules, MLP modules, or entire Transformer blocks. Existing methods~\cite{ma2023llm,he2024rethinking} explore different strategies, including attention drop~\cite{he2024matters}, MLP drop~\cite{mugnaini2025efficient}, block drop, and MLP width reduction~\cite{lei2025making,he2025understanding}. Attention drop mainly reduces KV-cache computation and inference latency, while MLP pruning and width reduction target the substantial redundancy in feed-forward layers. Block drop removes entire Transformer blocks but provides relatively coarse-grained control. Prior work also combines structural dimensions: MoPE-CLIP uses performance-based module importance and width-to-depth pruning for CLIP~\cite{lin2024mope}. Our study considers attention, MLP, block, and width reductions in autoregressive VLMs under both parameter and inference-speed budgets. Token pruning, such as FastV~\cite{chen2024fastv}, instead reduces visual-token processing without reducing the stored model parameters; it can be combined with structural extraction.
 
 % \section{Related Work and Preliminaries}
 % \subsection{Once-for-all Model}
@@ -201,7 +200,7 @@ dashed blocks indicate removed components, and narrower blocks indicate width re
 
 Since our goal is submodel extraction, we rely on structured pruning (i.e., compression) algorithms as the core tools. We therefore first conduct an empirical comparison of several representative compression strategies on common VLMs in order to understand their behavior under different deployment constraints.
 
-For block drop, MLP drop, and MLP width reduction, we align the comparison by controlling the proportion of removed parameters relative to the total parameter count of the original model, ensuring evaluation under the same compression ratio. In contrast, attention drop removes only a small fraction of parameters and mainly improves efficiency by reducing the key-value (KV) cache during autoregressive inference; we therefore evaluate it separately. Figure~\ref{fig:compare_base} presents results on instruction fine-tuned Qwen2.5-VL-7B and LLaVA1.5-7B using VQA v2~\cite{goyal2017making} and MMBench~\cite{liu2024mmbench}. Empirically, under the same parameter drop ratio, MLP width reduction generally preserves performance better than block drop and MLP drop, particularly at higher compression levels. This observation suggests that, in our evaluated settings, redundancy in these VLMs is more concentrated in the width of MLP layers rather than in model depth. We also observe that, under comparable compression ratios and benchmarks, Qwen2.5-VL-7B tends to exhibit steeper performance degradation than LLaVA1.5-7B, indicating relatively lower redundancy in the former model within our experimental setup.
+For block drop, MLP drop, and MLP width reduction, we align the comparison by controlling the proportion of removed parameters relative to the total parameter count of the original model, ensuring evaluation under the same compression ratio. In contrast, attention drop removes only a small fraction of parameters and mainly improves efficiency by reducing the key-value (KV) cache during autoregressive inference; we therefore evaluate it separately. Figure~\ref{fig:compare_base} presents results on instruction fine-tuned Qwen2.5-VL-7B and LLaVA1.5-7B using VQA v2~\cite{goyal2017making}. Empirically, under the same parameter drop ratio, MLP width reduction generally preserves performance better than block drop and MLP drop, particularly at higher compression levels. This observation suggests that, in our evaluated settings, redundancy in these VLMs is more concentrated in the width of MLP layers rather than in model depth. We also observe that, under comparable compression ratios and benchmarks, Qwen2.5-VL-7B exhibits steeper degradation under block and MLP dropping than LLaVA1.5-7B. This observation is specific to these operators and does not establish lower redundancy across all structural dimensions.
 
 
 \begin{figure*}[t]
@@ -232,7 +231,7 @@ For block drop, MLP drop, and MLP width reduction, we align the comparison by co
 %     \label{fig:compare_base}
 % \end{figure*}
 
-For attention drop, which is more effective for reducing GPU memory usage and inference latency than for reducing parameter count~\cite{he2024matters,heuncovering}, we conduct additional experiments to analyze its efficiency characteristics. As shown in Figure~\ref{fig:atten_com}, dropping less than 30\% of attention layers in Qwen and LLaVA models largely preserves VLM performance. Although this operation removes less than 3\% of the total model parameters, it provides noticeable inference speed improvements due to the reduction of KV-cache computation during autoregressive decoding. This efficiency gain is comparable to that achieved by substantially larger parameter reductions through width reduction. These observations indicate that different compression operators affect model efficiency and parameter count in different ways. Therefore, extracting an optimal submodel requires considering the primary deployment bottleneck, such as parameter-constrained scenarios (favoring MLP reduction) or latency-constrained scenarios (favoring attention drop).
+For attention drop, which is more effective for reducing GPU memory usage and inference latency than for reducing parameter count~\cite{he2024matters,heuncovering}, we conduct additional experiments to analyze its efficiency characteristics. As shown in Figure~\ref{fig:atten_com}, Qwen2.5-VL tolerates moderate attention dropping better than LLaVA in the evaluated setting; LLaVA accuracy already decreases substantially at a 20\% attention drop ratio. Although this operation removes less than 3\% of the total model parameters, it provides noticeable inference speed improvements due to the reduction of KV-cache computation during autoregressive decoding. This efficiency gain is comparable to that achieved by substantially larger parameter reductions through width reduction. These observations indicate that different compression operators affect model efficiency and parameter count in different ways. Therefore, selecting a submodel requires considering the primary deployment bottleneck, such as parameter-constrained scenarios (favoring MLP reduction) or latency-constrained scenarios (favoring attention drop).
 
 
 % \begin{figure*}[t]
@@ -266,10 +265,10 @@ We emphasize that the objective is explicitly task-conditioned: instead of prese
 
 Before performing budgeted reduction, we first compute an importance ranking for removable structural units based on the original pretrained model. This ranking stage provides a coarse estimate of the relative importance of different components and serves as a candidate ordering for the subsequent extraction process.
 
-For block-level ranking, suppose the model contains $L$ Transformer blocks. We construct $L$ temporary variants, each removing exactly one block while keeping all other components unchanged. Each variant is evaluated on a lightweight validation subset consisting of $K$ batches ($KB$ samples in total). Blocks whose removal yields higher accuracy are considered less important, and blocks are ranked accordingly. The same procedure is applied to attention modules and MLP sub-layers: each unit is individually removed once, and its post-removal accuracy determines its ranking.
+For block-level ranking, suppose the model contains $L$ Transformer blocks. We construct $L$ temporary variants, each removing exactly one block while keeping all other components unchanged. Each variant is evaluated on a lightweight validation subset consisting of $K$ batches of size $b$ ($Kb$ samples in total). Blocks whose removal yields higher accuracy are considered less important, and blocks are ranked accordingly. The same procedure is applied to MLP sub-layers. For attention modules, we use the selection criterion of \citet{he2024matters}.
 
 For MLP channels, instead of repeatedly measuring validation accuracy, we estimate importance using output sensitivity. Given intermediate activation $h$ and output projection weight $W_d$, the contribution of channel $i$ is approximated by the magnitude of $W_{d,i} h_i$. Each MLP layer is ranked independently based on this criterion.
-After this stage, we obtain a ranking over blocks, attention modules, MLP modules, and channels. Because the evaluation subset is extremely lightweight, this ranking step can be computed efficiently and performed only once before the extraction process. For attention layers, we follow the selection method in \cite{he2024matters}.
+After this stage, we obtain a ranking over blocks, attention modules, MLP modules, and channels. The ranking is computed once on the original model; candidate combinations are subsequently evaluated on the current submodel during extraction. Performance-based ablation directly measures task impact, whereas representation-similarity measures assess a different notion of redundancy. We do not claim superiority over alternative ranking criteria.
 
 % \begin{algorithm}[t]
 % \caption{Granularity-Controlled Submodel Extraction}
@@ -359,14 +358,13 @@ After this stage, we obtain a ranking over blocks, attention modules, MLP module
 
 \subsection{Granularity-Controlled Submodel Extraction}
 
-Based on the precomputed ranking, we perform budget-aware submodel extraction in a step-wise manner. Empirically, removing an entire MLP sub-layer provides a stable and effective reduction unit in transformer-based VLMs. We therefore adopt the parameter size of one MLP as the default reduction granularity, which allows the extraction process to proceed with consistent parameter reductions at each step. This design effectively performs operator-level search
+Based on the precomputed ranking, we perform budget-aware submodel extraction in a step-wise manner. The parameter size of an MLP sub-layer provides a consistent reference unit for structural reduction in transformer-based VLMs. We therefore adopt the parameter size of one MLP as the default reduction granularity, which allows the extraction process to proceed with consistent parameter reductions at each step. This design effectively performs operator-level search
 over heterogeneous structural reductions under a fixed
 budget constraint.
 
-For example, if the target requires removing approximately 50\% of parameters and one MLP corresponds to about 5\% of the total parameters, we perform roughly 10 reduction steps. At each step, we consider candidate structural reductions across different operator types (block removal, attention removal, or MLP removal) that correspond to approximately one reduction unit. Each candidate submodel is evaluated on the lightweight validation subset, and the operator that achieves the highest validation accuracy is selected. This step-wise selection process progressively constructs the final submodel while respecting the parameter budget.
-The procedure continues until the cumulative parameter reduction slightly exceeds the target budget. Finally, we apply MLP width reduction to finely adjust the remaining parameter count and match the target constraint precisely. The same extraction framework can also be applied under
-an inference speed budget by selecting operators that
-reduce computational latency.
+At each step, we construct candidate submodels using block removal, attention removal, MLP removal, and MLP width reduction, guided by the precomputed rankings. Candidate parameter reductions are approximately matched to the prescribed granularity. Each candidate is evaluated on the same lightweight validation subset, and the candidate with the highest validation accuracy is retained. The process continues until the retained submodel satisfies $|\theta'|\le B$. Width reduction provides finer control near the budget boundary; discrete removals may leave the parameter count below the specified upper bound. We do not require exact equality to the budget.
+
+For an inference-speed budget, the objective remains task accuracy, but the resource constraint concerns inference latency rather than parameter count. One attention layer defines the default step granularity in this setting. Figures~\ref{fig:case_para} and~\ref{fig:case_latency} illustrate the distinction: the parameter-priority trajectory selects MLP removal followed by repeated width reduction, whereas the speed-priority trajectory starts with attention removal before selecting block removal and width reduction.
 
 This design tightly couples the ranking stage with the extraction process: the ranking restricts the candidate pool of removable components, while the granularity-controlled selection determines the combination of structural operators used in the final hybrid submodel.
 
@@ -388,13 +386,13 @@ For the lightweight ranking stage, we use a much smaller fixed subset of 64 samp
 \textbf{Recovery Training Details.}
 After submodel extraction, we optionally perform lightweight recovery training for 1 epoch on 5,000 training samples with learning rate $1\times10^{-6}$ using bf16 mixed precision.
 We sweep target compression ratios over $\{5\%, 10\%, 15\%, 20\%, 25\%, 30\%\}$ parameter reduction and $\{5\%, 10\%, 15\%, 20\%, 25\%, 30\%\}$ inference speedup.
-Throughout the experiments, we use the parameter size of one MLP layer as the default reduction unit to define the step granularity in our extraction procedure, and one attention layer as the default inference speedup unit. All experiments are conducted on NVIDIA H200 GPUs. Peak memory occupation is calculated on one GPU. We use AI tools to help developing the evaluation code.
+Throughout the experiments, we use the parameter size of one MLP layer as the default reduction unit to define the step granularity in our extraction procedure, and one attention layer as the default inference speedup unit. All experiments are conducted on NVIDIA H200 GPUs. Peak memory occupation is calculated on one GPU. We used AI tools to help develop the evaluation code.
 
 \begin{figure*}[t]
     \centering
     \includegraphics[width=\linewidth]{Figure/compression_parameter.pdf}
     \caption{\textbf{Submodel performance under parameter-budgeted compression. Attention drop is excluded since it removes very few parameters.}
-    We compare different drop operators across four models. For each model, the top row reports the direct accuracy of the compressed submodel (Dir. Acc) and the bottom row reports the recovered accuracy after recovery training (Rec. Acc). We exclude attention drop since it is consistently inferior under parameter-budgeted settings.
+    We compare structural operators across four models on VQA v2. For each model, the top row reports the direct accuracy of the compressed submodel (Dir. Acc) and the bottom row reports the recovered accuracy after recovery training (Rec. Acc). Attention dropping is analyzed separately in Figure~\ref{fig:atten_com}.
     Overall, width reduction yields the strongest accuracy retention across compression ratios, and our method adapts to select the most suitable operator to match the budget while maintaining accuracy competitive with the best baseline.}
     \label{fig:param_budget_8plots}
 \end{figure*}
@@ -402,8 +400,7 @@ Throughout the experiments, we use the parameter size of one MLP layer as the de
 \begin{figure*}[t]
     \centering
     \includegraphics[width=\linewidth]{Figure/compression_inf.pdf}
-\caption{Submodel extraction under an inference speed budget. 
-Our method adaptively selects among heterogeneous operators and achieves consistently strong performance across different speed-up targets.}
+\caption{Submodel extraction on VQA v2 under an inference-speed budget. Our method selects among heterogeneous structural operators and generally preserves accuracy competitively with the evaluated baselines. High speed-up targets can still cause substantial accuracy degradation.}
     \label{fig:inf_budget_8plots}
 \end{figure*}
 
@@ -417,20 +414,20 @@ This pattern holds consistently across all evaluated models and for both direct 
 
 Although width reduction performs strongly under parameter constraints, it is not always the optimal choice at every operating point. 
 Our framework is designed to \textbf{adaptively select the operator that best matches the current budget–accuracy trade-off}. 
-As shown in Figure~\ref{fig:param_budget_8plots}, the extracted submodels consistently achieve performance comparable to or better than the strongest single-operator baseline across most compression ratios. 
-This behavior indicates that combining heterogeneous operators can exploit complementary effects: width reduction is chosen when it provides the best parameter–accuracy trade-off, while other operators are selected when they produce better local improvements.
+As shown in Figure~\ref{fig:param_budget_8plots}, the extracted submodels achieve accuracy comparable to width reduction at many operating points, rather than uniformly improving over it.
+Under parameter constraints, the search often recovers the strong width-reduction baseline. Its additional flexibility is more apparent when the constraint changes to inference speed, where operator preferences differ.
 
 We next analyze submodel extraction when the deployment constraint is defined by the \textbf{inference speed budget}. 
 Figure~\ref{fig:inf_budget_8plots} presents the accuracy trends under different speed-up targets. 
 In contrast to the parameter-budget scenario, width reduction is no longer consistently the most favorable operator. 
-When the required speed-up is relatively small, \textbf{attention drop} typically achieves the highest accuracy, since removing attention layers directly reduces the key-value cache computation during autoregressive decoding while affecting only a small portion of the model parameters.
-As the required speed-up increases, \textbf{block drop} becomes more effective. 
+When the required speed-up is relatively small, \textbf{attention drop} is competitive in several evaluated settings, since removing attention layers directly reduces the key-value cache computation during autoregressive decoding while affecting only a small portion of the model parameters.
+\textbf{Block drop} can provide larger latency reductions, although its accuracy cost varies substantially across backbones.
 Removing entire Transformer blocks shortens the computational path of the network and therefore provides stronger latency reduction than attention removal alone. 
 In comparison, width reduction offers relatively limited latency benefits despite reducing parameters, because shrinking intermediate tensor dimensions does not always translate to proportional improvements in GPU kernel efficiency.
 
 Overall, these results highlight the importance of \textbf{adaptive operator selection under different deployment constraints}. 
 While width reduction dominates under parameter budgets, latency-oriented deployment favors operators that directly reduce computation, such as attention removal and block removal. 
-Our extraction framework can automatically adapt to these different optimization objectives and consistently produce high-performing submodels across both parameter- and latency-budget settings.
+Our extraction framework adapts operator selection to these constraints and generally remains competitive with the evaluated structural baselines. However, aggressive speed-up targets still incur substantial accuracy losses, particularly on Qwen2.5-VL-3B.
 
 
 \begin{table}[t]
@@ -510,41 +507,6 @@ We report CUDA peak allocated/reserved memory and average time per sample during
 % \end{table*}
 
 
-\subsection{Inference Efficiency and Memory Analysis}
-\label{sec:budget}
-
-We further analyze the system-level efficiency of different compression operators under a total-parameter budget. Table~\ref{tab:efficiency} reports the peak GPU memory usage and the average inference latency per sample on VQAv2.
-
-Increasing the compression ratio consistently reduces GPU memory usage across all operators. For example, the peak allocated memory decreases from 15.879\,GB in the original model to around 12\,GB at a 30\% compression ratio. Among the evaluated operators, MLP Drop tends to provide the largest memory reduction, since MLP layers constitute a substantial portion of both the model parameters and activation memory.
-
-The impact on inference latency, however, differs significantly across operators. Removing entire blocks or MLP modules shortens the computational path and leads to faster inference, reducing the latency from 301.37\,ms to around 200\,ms at a 30\% compression ratio. In contrast, width reduction does not achieve comparable speedups despite reducing parameters, because modifying intermediate tensor shapes can result in less efficient GPU kernel execution.
-
-These results suggest that parameter reduction alone does not necessarily translate into improved inference efficiency. Instead, different structural operators optimize different system bottlenecks, such as parameter count, memory usage, or runtime latency. This observation highlights the importance of selecting compression operators according to the target deployment constraint.
-
-\begin{figure}[t]
-    \centering
-    \includegraphics[width=\linewidth]{Figure/recovery.png}
-    \caption{Task-specific effect of recovery training under 30\% compression.}
-    % \caption{\textbf{Effect of recovery training at 30\% compression.}
-    % We perform recovery training on the \textbf{target task} (VQAv2) after extracting the compressed submodel.
-    % The VQAv2 accuracy increases from \textbf{0.7633} (compressed, epoch 0) to \textbf{0.7740} after one epoch,
-    % while TextVQA consistently decreases (e.g., \textbf{0.7378} $\rightarrow$ \textbf{0.7180} within 5 epochs),
-    % indicating that recovery training prioritizes task-specific performance rather than generalization across tasks.
-    % Shaded areas denote the standard deviation.}
-    \label{fig:recovery_training}
-\end{figure}
-
-\subsection{Effect of Recovery Training}
-
-An important property of our framework is that the extracted submodel is optimized for a specific downstream task rather than preserving general-purpose capability. This design enables lightweight recovery training on the target dataset to restore task accuracy after structural compression.
-
-We analyze this effect under a compression ratio of \textbf{30\%}, where recovery training is performed on the VQA v2 dataset. Before recovery training, the compressed model achieves an accuracy of \textbf{0.7633} on VQAv2. After one epoch of recovery training, the accuracy improves to \textbf{0.7740}, and remains relatively stable in subsequent epochs, as shown in Figure~\ref{fig:recovery_training}. These results indicate that a small amount of task-specific fine-tuning can effectively recover part of the accuracy lost during compression.
-
-At the same time, recovery training does not improve performance on other tasks. For example, the accuracy on TextVQA decreases from \textbf{0.7378} at epoch 0 to \textbf{0.7180} after five epochs of training. This behavior reflects the task-prioritized nature of our approach: since recovery training focuses exclusively on the target dataset, the limited model capacity is gradually adapted to the target task rather than maintaining cross-task generalization.
-
-Although the recovered VQA v2 accuracy remains lower than that of the original uncompressed model, these results demonstrate that recovery training provides an effective mechanism for restoring target-task performance after submodel extraction. This property is particularly useful in practical deployment scenarios where the model is optimized for a specific application and task-specific accuracy is more critical than preserving broad multi-task capability.
-
-
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\linewidth]{Figure/case_para.pdf}
@@ -567,16 +529,80 @@ This demonstrates that the proposed search strategy can adaptively select differ
 \label{fig:case_latency}
 \end{figure*}
 
+
+\subsection{Inference Efficiency and Memory Analysis}
+\label{sec:budget}
+
+We further analyze the system-level efficiency of different compression operators under a total-parameter budget. Table~\ref{tab:efficiency} reports the peak GPU memory usage and the average inference latency per sample on VQAv2.
+
+Increasing the compression ratio consistently reduces GPU memory usage across all operators. For example, the peak allocated memory decreases from 15.879\,GB in the original model to around 12\,GB at a 30\% compression ratio. Among the evaluated operators, MLP Drop tends to provide the largest memory reduction, since MLP layers constitute a substantial portion of both the model parameters and activation memory.
+
+The impact on inference latency, however, differs significantly across operators. Removing entire blocks or MLP modules shortens the computational path and leads to faster inference, reducing the latency from 301.37\,ms to around 200\,ms at a 30\% compression ratio. In contrast, width reduction does not achieve comparable speedups despite reducing parameters, because modifying intermediate tensor shapes can result in less efficient GPU kernel execution.
+
+These results suggest that parameter reduction alone does not necessarily translate into improved inference efficiency. Instead, different structural operators optimize different system bottlenecks, such as parameter count, memory usage, or runtime latency. This observation highlights the importance of selecting compression operators according to the target deployment constraint.
+
+
+\textbf{Complementarity with Token Pruning.}
+Token pruning reduces visual-token computation while keeping stored model parameters unchanged. Table~\ref{tab:fastv} presents an auxiliary single-operating-point comparison with FastV~\cite{chen2024fastv}. FastV reduces latency from 142 to 94 ms while preserving higher accuracy. Our submodel reduces parameters by 30\% and peak memory from 9.8 to 6.9 GB, with accuracy decreasing from 81.53\% to 75.92\%. Combining the two reduces latency to 88 ms and peak memory to 6.7 GB, with an additional accuracy decrease of 0.24 percentage points. Thus, structured extraction is relevant when parameter storage or memory capacity is a binding constraint; these results do not establish superiority for latency-only deployment. Absolute system measurements in this auxiliary comparison are not compared across tables.
+
+% AUTHOR CHECK: The prior rebuttal supplies these numbers but not the complete
+% model/hardware/precision/batch/decoding/FastV configuration. Recover that
+% configuration from the original run records before treating this as fully
+% reproducible. Do not infer it from Table~\ref{tab:efficiency}.
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrrrr}
+\toprule
+Method & {Red.\ (\%)} & {Mem.\ (GB)} & {Lat.\ (ms)} & {Acc.\ (\%)} \\
+\midrule
+Original     & 0  & 9.8 & 142 & 81.53 \\
+FastV        & 0  & 9.4 & 94  & 80.26 \\
+Ours         & 30 & 6.9 & 119 & 75.92 \\
+Ours + FastV & 30 & 6.7 & 88  & 75.68 \\
+\bottomrule
+\end{tabular}
+\caption{Auxiliary comparison with token pruning at one operating point. Red.: parameter reduction; Mem.: peak GPU memory; Lat.: inference latency. Absolute memory and latency values are used only for within-table comparisons.}
+\label{tab:fastv}
+\end{table}
+
+\textbf{Ranking Subset Size.}
+In an auxiliary subset-size analysis, 16, 32, 64, 128, and 256 ranking samples yielded final accuracies of 77.66\%, 77.94\%, 77.94\%, 77.94\%, and 77.94\%, respectively. This supports the default of 64 samples in that setting, but equal accuracy does not establish identical selected architectures or stability across different subset compositions.
+% AUTHOR CHECK: Add the model, task, compression budget, and recovery setting
+% from the original subset-size experiment records; the rebuttal omits them.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{Figure/recovery.png}
+    \caption{Task-specific effect of recovery training under 30\% compression.}
+    % \caption{\textbf{Effect of recovery training at 30\% compression.}
+    % We perform recovery training on the \textbf{target task} (VQAv2) after extracting the compressed submodel.
+    % The VQAv2 accuracy increases from \textbf{0.7633} (compressed, epoch 0) to \textbf{0.7740} after one epoch,
+    % while TextVQA consistently decreases (e.g., \textbf{0.7378} $\rightarrow$ \textbf{0.7180} within 5 epochs),
+    % indicating that recovery training prioritizes task-specific performance rather than generalization across tasks.
+    % Shaded areas denote the standard deviation.}
+    \label{fig:recovery_training}
+\end{figure}
+
+\subsection{Effect of Recovery Training}
+
+An important property of our framework is that the extracted submodel is optimized for a specific downstream task rather than preserving general-purpose capability. This design enables lightweight recovery training on the target dataset to restore task accuracy after structural compression.
+
+We analyze this effect under a compression ratio of \textbf{30\%}, where recovery training is performed on the VQA v2 dataset. Before recovery training, the compressed model achieves an accuracy of \textbf{0.7633} on VQAv2. After one epoch of recovery training, the accuracy improves to \textbf{0.7740}, before gradually decreasing with further training, as shown in Figure~\ref{fig:recovery_training}. These results indicate that a small amount of task-specific fine-tuning can effectively recover part of the accuracy lost during compression.
+
+Recovery training does not provide sustained improvements on the non-target task: TextVQA improves slightly after one epoch but declines with further training. Specifically, the accuracy on TextVQA decreases from \textbf{0.7378} at epoch 0 to \textbf{0.7180} after five epochs of training. This behavior reflects the task-prioritized nature of our approach: since recovery training focuses exclusively on the target dataset, the limited model capacity is gradually adapted to the target task rather than maintaining cross-task generalization.
+
+Although the recovered VQA v2 accuracy remains lower than that of the original uncompressed model, these results demonstrate that recovery training provides an effective mechanism for restoring target-task performance after submodel extraction. This property is particularly useful in practical deployment scenarios where the model is optimized for a specific application and task-specific accuracy is more critical than preserving broad multi-task capability.
+
+
 \subsection{Case Study}
 
 To better understand the behavior of the proposed submodel extraction framework, we visualize the operator selection process during the search under different deployment constraints. Figure~\ref{fig:case_para} and Figure~\ref{fig:case_latency} show two representative cases corresponding to different optimization objectives: parameter-priority and speed-up-priority.
 
-Figure~\ref{fig:case_para} illustrates the search trajectory when parameter reduction is the primary objective. The extraction process first applies MLP Drop and then repeatedly selects width reduction in subsequent steps. This behavior reflects the strong parameter–accuracy trade-off provided by width reduction, which can effectively reduce parameter counts while preserving most of the model structure. As a result, width reduction becomes the dominant operator during the search process, gradually shrinking the model until the desired parameter budget is reached. Importantly, the accuracy degradation remains smooth throughout the process, indicating that the algorithm consistently selects operators that minimize performance loss under the parameter constraint.
+Figure~\ref{fig:case_para} illustrates the search trajectory when parameter reduction is the primary objective. The extraction process first applies MLP Drop and then repeatedly selects width reduction in subsequent steps. This behavior reflects the strong parameter–accuracy trade-off provided by width reduction, which can effectively reduce parameter counts while preserving most of the model structure. As a result, width reduction becomes the dominant operator during the search process, gradually shrinking the model until the desired parameter budget is reached. The trajectory illustrates gradual accuracy degradation in this case; it does not establish global optimality of the greedy choices.
 In contrast, the search trajectory under the speed-up-priority setting shows a different pattern, as illustrated in Figure~\ref{fig:case_latency}. In this case, the algorithm first removes several attention layers, which directly reduces the computational cost of the model and leads to immediate inference speed improvements. After the attention layers are removed, the algorithm further applies block removal to shorten the computational path of the network. Finally, width reduction is used in the later stage to fine-tune the remaining budget and reach the desired speed-up target.
 
-These two case studies highlight the adaptive nature of the proposed extraction framework. Instead of relying on a fixed compression strategy, the algorithm dynamically selects the most suitable operator according to the current optimization objective. Under parameter constraints it prioritizes width reduction, while under latency constraints it first removes computationally expensive modules such as attention layers. This behavior demonstrates that the proposed method can automatically discover compression strategies that align with different deployment requirements while maintaining strong task accuracy.
-
-More broadly, the consistent search patterns observed in these cases suggest that the framework captures meaningful structural redundancy in the model. The operator selection mechanism therefore provides a practical way to adapt pretrained vision-language models to diverse deployment scenarios with different resource constraints.
 
 % \begin{table*}[t]
 % \centering
@@ -593,7 +619,7 @@ More broadly, the consistent search patterns observed in these cases suggest tha
 % \cmidrule(lr){3-4} \cmidrule(lr){5-6}
 % \cmidrule(lr){7-8} \cmidrule(lr){9-10}
 % & 
-% & Dir. Acc & Rec. Acc 
+% & Dir. Acc & Rec. Acc
 % & Dir. Acc & Rec. Acc
 % & Dir. Acc & Rec. Acc
 % & Dir. Acc & Rec. Acc \\
@@ -622,7 +648,7 @@ More broadly, the consistent search patterns observed in these cases suggest tha
 %      & MLP Drop  &19.57  &57.87  &51.07  &73.17  &65.88  &66.85  &69.28  &71.15  \\
 %      & Width Red. &80.45  &81.78  &77.53  &77.92  &74.48  &74.27  &76.77  &76.65  \\
 %      & Ours &80.45  &81.80  &77.53  &77.95  &74.48  &74.23  &75.43  &75.33  \\
-     
+
 % \midrule
 % \multirow{5}{*}{\textbf{20\%}} & Atten. Drop  &  &  &  &  &  &  &  &  \\
 %      & Block Drop  &4.83  &23.88  &0.10  &0.40  &52.83  &47.92  &17.32  &46.80  \\
@@ -704,7 +730,7 @@ More broadly, the consistent search patterns observed in these cases suggest tha
 
 \section{Conclusion}
 
-In this work, we revisit model compression from a deployment-oriented perspective and formulate \emph{budget-aware, task-conditioned submodel extraction} for VLMs. Rather than preserving universal zero-shot capability, we focus on practical deployment settings where models operate on a small number of target tasks under explicit computational constraints. Through systematic analysis of representative structural compression strategies, including attention drop, MLP drop, block drop, and MLP width reduction, we observe distinct trade-offs among efficiency, parameter reduction, and task performance. In particular, width reduction consistently preserves task performance better under comparable budgets, suggesting that redundancy in many VLMs is more concentrated in MLP width than model depth. Motivated by these findings, we propose a unified framework that automatically extracts task-specific submodels under a given parameter budget by combining model-level importance ranking with granularity-aware extraction. Extensive experiments on multiple Qwen-based and LLaVA-based VLMs demonstrate that our method consistently maintains strong task accuracy under substantial parameter reduction. Overall, our work provides a practical and scalable pathway for transforming large pretrained foundation models into task-aligned and budget-efficient models for real-world deployment.
+We study task-conditioned extraction from pretrained VLMs using heterogeneous structural operators. On the evaluated backbones, width reduction generally preserves accuracy best under parameter budgets, while inference-speed budgets favor different operator combinations. Task-aware ranking and greedy selection produce submodels competitive with the evaluated structural baselines. The auxiliary FastV comparison illustrates complementarity with token pruning; aggressive compression still incurs accuracy losses.
 
 % \section{Conclusion}
 
@@ -714,7 +740,7 @@ In this work, we revisit model compression from a deployment-oriented perspectiv
 
 \section*{Limitations}
 
-Our framework focuses on task-conditioned submodel extraction under specific deployment constraints, and therefore primarily evaluates performance on a small set of VQA-style benchmarks and representative VLM architectures. Although the proposed extraction strategy generalizes across multiple compression operators, additional studies on broader multimodal tasks, larger-scale models, and more diverse deployment scenarios would further improve the understanding of its applicability. In addition, the current framework relies on lightweight validation-based ranking and greedy operator selection, which provides strong empirical performance while not guaranteeing globally optimal submodel configurations under a given budget.
+Our framework focuses on task-conditioned submodel extraction under specific deployment constraints, and therefore primarily evaluates performance on a small set of VQA-style benchmarks and representative VLM architectures. Although the proposed extraction strategy generalizes across multiple compression operators, additional studies on broader multimodal tasks, larger-scale models, and more diverse deployment scenarios would further improve the understanding of its applicability. The framework uses existing importance criteria and greedy operator selection and does not guarantee globally optimal submodels. The subset-size analysis covers one setting and does not establish robustness across subset compositions or random seeds. The auxiliary FastV comparison covers a single operating point rather than full trade-off curves or variance estimates. Our results do not establish that structural extraction is preferable for latency-only deployment, and measurements on H200 GPUs do not establish performance on edge hardware. Aggressive compression incurs accuracy losses; its suitability depends on memory constraints and application-specific accuracy requirements. The evaluated general VQA benchmarks do not establish benefits for specialized vertical domains.
 
 % \section*{Acknowledgments}
 
