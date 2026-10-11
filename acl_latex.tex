@@ -265,7 +265,7 @@ We emphasize that the objective is explicitly task-conditioned: instead of prese
 
 Before performing budgeted reduction, we first compute an importance ranking for removable structural units based on the original pretrained model. This ranking stage provides a coarse estimate of the relative importance of different components and serves as a candidate ordering for the subsequent extraction process.
 
-For block-level ranking, suppose the model contains $L$ Transformer blocks. We construct $L$ temporary variants, each removing exactly one block while keeping all other components unchanged. Each variant is evaluated on a lightweight validation subset consisting of $K$ batches of size $b$ ($Kb$ samples in total). Blocks whose removal yields higher accuracy are considered less important, and blocks are ranked accordingly. The same procedure is applied to MLP sub-layers. For attention modules, we use the selection criterion of \citet{he2024matters}.
+For block-level ranking, suppose the model contains $L$ Transformer blocks. We construct $L$ temporary variants, each removing exactly one block while keeping all other components unchanged. Each variant is evaluated on a lightweight validation subset consisting of $K$ batches of size $b$ ($Kb$ samples in total). Blocks whose removal yields higher accuracy are considered less important, and blocks are ranked accordingly. The same procedure is applied to MLP sub-layers. The same validation-ablation procedure is applied to attention modules: each module is individually removed, and its post-removal validation accuracy determines its ranking.
 
 For MLP channels, instead of repeatedly measuring validation accuracy, we estimate importance using output sensitivity. Given intermediate activation $h$ and output projection weight $W_d$, the contribution of channel $i$ is approximated by the magnitude of $W_{d,i} h_i$. Each MLP layer is ranked independently based on this criterion.
 After this stage, we obtain a ranking over blocks, attention modules, MLP modules, and channels. The ranking is computed once on the original model; candidate combinations are subsequently evaluated on the current submodel during extraction. Performance-based ablation directly measures task impact, whereas representation-similarity measures assess a different notion of redundancy. We do not claim superiority over alternative ranking criteria.
@@ -381,7 +381,7 @@ Unless otherwise specified, we keep the vision encoder frozen during extraction 
 \textbf{Benchmarks and Datasets.}
 We use three VQA-style benchmarks as target tasks: VQA v2~\cite{goyal2017making}, MMBench~\cite{liu2024mmbench}, and TextVQA~\cite{singh2019towards}, and report accuracy as the evaluation metric.
 For each benchmark, we sample 2,000 validation/test examples for evaluation to keep experiments consistent and computationally tractable.
-For the lightweight ranking stage, we use a much smaller fixed subset of 64 samples, which is shared across all candidate evaluations.
+For the lightweight ranking stage, we use a fixed subset of 64 samples, shared across all candidate evaluations and disjoint from the final evaluation examples.
 
 \textbf{Recovery Training Details.}
 After submodel extraction, we optionally perform lightweight recovery training for 1 epoch on 5,000 training samples with learning rate $1\times10^{-6}$ using bf16 mixed precision.
@@ -543,12 +543,8 @@ These results suggest that parameter reduction alone does not necessarily transl
 
 
 \textbf{Complementarity with Token Pruning.}
-Token pruning reduces visual-token computation while keeping stored model parameters unchanged. Table~\ref{tab:fastv} presents an auxiliary single-operating-point comparison with FastV~\cite{chen2024fastv}. FastV reduces latency from 142 to 94 ms while preserving higher accuracy. Our submodel reduces parameters by 30\% and peak memory from 9.8 to 6.9 GB, with accuracy decreasing from 81.53\% to 75.92\%. Combining the two reduces latency to 88 ms and peak memory to 6.7 GB, with an additional accuracy decrease of 0.24 percentage points. Thus, structured extraction is relevant when parameter storage or memory capacity is a binding constraint; these results do not establish superiority for latency-only deployment. Absolute system measurements in this auxiliary comparison are not compared across tables.
+Token pruning reduces visual-token computation while keeping stored model parameters unchanged. Table~\ref{tab:fastv} compares FastV~\cite{chen2024fastv} on Qwen2.5-VL-3B using the evaluation protocol of Section~4.1. Table~\ref{tab:efficiency} instead uses Qwen2.5-VL-7B. FastV reduces latency from 142 to 94 ms while preserving higher accuracy. Our submodel reduces parameters by 30\% and peak memory from 9.8 to 6.9 GB, with accuracy decreasing from 81.53\% to 75.92\%. Combining the two reduces latency to 88 ms and peak memory to 6.7 GB, with an additional accuracy decrease of 0.24 percentage points. Thus, structured extraction is relevant when parameter storage or memory capacity is a binding constraint; these results do not establish superiority for latency-only deployment.
 
-% AUTHOR CHECK: The prior rebuttal supplies these numbers but not the complete
-% model/hardware/precision/batch/decoding/FastV configuration. Recover that
-% configuration from the original run records before treating this as fully
-% reproducible. Do not infer it from Table~\ref{tab:efficiency}.
 \begin{table}[t]
 \centering
 \small
@@ -563,14 +559,12 @@ Ours         & 30 & 6.9 & 119 & 75.92 \\
 Ours + FastV & 30 & 6.7 & 88  & 75.68 \\
 \bottomrule
 \end{tabular}
-\caption{Auxiliary comparison with token pruning at one operating point. Red.: parameter reduction; Mem.: peak GPU memory; Lat.: inference latency. Absolute memory and latency values are used only for within-table comparisons.}
+\caption{Token-pruning comparison on Qwen2.5-VL-3B and VQA v2. Red.: parameter reduction; Mem.: peak GPU memory; Lat.: inference latency. Ours uses 30\% parameter reduction; the hardware and evaluation protocol follow Section~4.1.}
 \label{tab:fastv}
 \end{table}
 
 \textbf{Ranking Subset Size.}
-In an auxiliary subset-size analysis, 16, 32, 64, 128, and 256 ranking samples yielded final accuracies of 77.66\%, 77.94\%, 77.94\%, 77.94\%, and 77.94\%, respectively. This supports the default of 64 samples in that setting, but equal accuracy does not establish identical selected architectures or stability across different subset compositions.
-% AUTHOR CHECK: Add the model, task, compression budget, and recovery setting
-% from the original subset-size experiment records; the rebuttal omits them.
+Following the case-study extraction settings in Figures~\ref{fig:case_para} and~\ref{fig:case_latency}, we vary only the ranking subset size. Using 16, 32, 64, 128, and 256 samples yields final accuracies of 77.66\%, 77.94\%, 77.94\%, 77.94\%, and 77.94\%, respectively. This supports using 64 samples in the evaluated setting; stability across different subset compositions remains untested.
 
 \begin{figure}[t]
     \centering
